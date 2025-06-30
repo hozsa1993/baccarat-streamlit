@@ -1,9 +1,10 @@
 import streamlit as st
+import matplotlib.pyplot as plt
 
 # 頁面設定
-st.set_page_config(page_title="AI 百家樂預測分析", page_icon="🎰", layout="centered")
+st.set_page_config(page_title="AI 百家樂全自動預測分析", page_icon="🎰", layout="centered")
 
-# 激活碼
+# 激活碼設定
 PASSWORD = "aa17888"
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
@@ -44,21 +45,21 @@ INCREMENT = 100
 chip_sets = st.session_state.chip_sets
 current_chip = chip_sets[st.session_state.current_chip_set]
 
-st.title("🎰 AI 百家樂預測分析")
+st.title("🎰 AI 百家樂全自動預測分析")
 
-# --- 本局結果與勝負一次確認 (第一區) ---
+# ---------- 第一區：本局結果與勝負一次確認 ----------
 st.header("🎮 本局結果與勝負一次確認")
 
 st.markdown("**選擇本局結果（莊、閒、和）：**")
 col_r1, col_r2, col_r3 = st.columns(3)
 with col_r1:
-    if st.button("🟥 莊 (B)"):
+    if st.button("🟥 莊 (B)", key="result_B"):
         st.session_state.selected_result = "B"
 with col_r2:
-    if st.button("🟦 閒 (P)"):
+    if st.button("🟦 閒 (P)", key="result_P"):
         st.session_state.selected_result = "P"
 with col_r3:
-    if st.button("🟩 和 (T)"):
+    if st.button("🟩 和 (T)", key="result_T"):
         st.session_state.selected_result = "T"
 
 if st.session_state.selected_result:
@@ -67,13 +68,13 @@ if st.session_state.selected_result:
 st.markdown("**選擇本局輸贏狀態：**")
 col_o1, col_o2, col_o3 = st.columns(3)
 with col_o1:
-    if st.button("✅ 勝利"):
+    if st.button("✅ 勝利", key="outcome_win"):
         st.session_state.selected_outcome = "win"
 with col_o2:
-    if st.button("❌ 失敗"):
+    if st.button("❌ 失敗", key="outcome_lose"):
         st.session_state.selected_outcome = "lose"
 with col_o3:
-    if st.button("➖ 和局"):
+    if st.button("➖ 和局", key="outcome_tie"):
         st.session_state.selected_outcome = "tie"
 
 if st.session_state.selected_outcome:
@@ -82,7 +83,7 @@ if st.session_state.selected_outcome:
 
 st.markdown("---")
 
-if st.button("提交本局結果"):
+if st.button("提交本局結果", key="submit_result"):
     if st.session_state.selected_result is None:
         st.warning("請先選擇本局結果")
     elif st.session_state.selected_outcome is None:
@@ -93,21 +94,18 @@ if st.button("提交本局結果"):
         st.session_state.history.append(side)
         st.session_state.total_games += 1
 
-        # 自動調整勝敗金額
         if outcome == "win":
             st.session_state.win_games += 1
             st.session_state.total_profit += current_chip["win_amount"]
-            # 勝利後勝利金額加，失敗金額微減
             current_chip["win_amount"] = min(100_0000, current_chip["win_amount"] + INCREMENT)
             current_chip["lose_amount"] = max(100, current_chip["lose_amount"] - INCREMENT // 2)
             st.success(f"勝利！累積獲利 +{current_chip['win_amount'] - INCREMENT} 元")
         elif outcome == "lose":
             st.session_state.total_profit -= current_chip["lose_amount"]
-            # 失敗後失敗金額加，勝利金額微減
             current_chip["lose_amount"] = min(100_0000, current_chip["lose_amount"] + INCREMENT)
             current_chip["win_amount"] = max(100, current_chip["win_amount"] - INCREMENT // 2)
             st.error(f"失敗！累積損失 -{current_chip['lose_amount'] - INCREMENT} 元")
-        else:  # 和局
+        else:
             st.info("和局，籌碼金額不變")
 
         # 重置選擇
@@ -115,9 +113,7 @@ if st.button("提交本局結果"):
         st.session_state.selected_outcome = None
         st.experimental_rerun()
 
-st.markdown("---")
-
-# --- 統計資料 (第二區) ---
+# ---------- 第二區：統計資料 ----------
 st.header("📊 統計資料")
 
 h = st.session_state.history
@@ -133,7 +129,7 @@ col3.metric("和 (T)", tie)
 col4.metric("總局數", total)
 
 if total > 0:
-    st.info(f"勝率｜莊: {banker / total * 100:.1f}% | 閒: {player / total * 100:.1f}% | 和: {tie / total * 100:.1f}%")
+    st.info(f"機率｜莊: {banker / total * 100:.1f}% | 閒: {player / total * 100:.1f}% | 和: {tie / total * 100:.1f}%")
 else:
     st.warning("尚無資料，請輸入結果")
 
@@ -141,7 +137,6 @@ win_rate = (st.session_state.win_games / st.session_state.total_games * 100) if 
 st.success(f"💰 累積獲利: {st.session_state.total_profit:,} 元 | 勝場: {st.session_state.win_games} | 總場: {st.session_state.total_games} | 勝率: {win_rate:.1f}%")
 
 # 三寶路建議
-st.markdown("---")
 st.subheader("🪄 三寶路建議")
 last4 = h[-4:]
 suggestion = "資料不足，請先輸入資料"
@@ -156,16 +151,33 @@ if len(last4) >= 3:
         suggestion = "無明顯趨勢，建議觀望或小注"
 st.info(f"🎯 {suggestion}")
 
-# --- 歷史紀錄 (第三區) ---
-st.markdown("---")
+# ---------- 第三區：走勢圖 ----------
+def plot_trend():
+    if not h:
+        st.warning("無資料可繪製走勢圖")
+        return
+    mapping = {"B": 1, "P": 0, "T": 0.5}
+    data = [mapping[x] for x in h[-30:]]
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.plot(range(1, len(data)+1), data, marker='o', color="#FF6F61", linestyle='-', linewidth=2)
+    ax.set_title("近 30 局莊閒和走勢圖", fontsize=14)
+    ax.set_xlabel("局數")
+    ax.set_ylabel("結果")
+    ax.set_yticks([0, 0.5, 1])
+    ax.set_yticklabels(["閒 (0)", "和 (0.5)", "莊 (1)"])
+    ax.grid(True, linestyle="--", alpha=0.5)
+    st.pyplot(fig)
+
+plot_trend()
+
+# ---------- 第四區：歷史紀錄 ----------
 st.header("🕒 歷史紀錄")
 if h:
     st.text_area("歷史輸入記錄", " ".join(h), height=120, disabled=True)
 else:
     st.info("尚無紀錄，請開始輸入資料")
 
-# --- 籌碼管理(最後區) ---
-st.markdown("---")
+# ---------- 第五區：籌碼管理 ----------
 st.header("🎲 籌碼管理")
 
 chip_names = list(chip_sets.keys())
@@ -173,17 +185,14 @@ current_name = st.selectbox("選擇籌碼組", chip_names, index=chip_names.inde
 st.session_state.current_chip_set = current_name
 current_chip = chip_sets[current_name]
 
-# 勝敗金額顯示，不能手動改，只能看
 st.markdown(f"目前勝利金額：**{current_chip['win_amount']:,}** 元（最大 100萬）")
 st.markdown(f"目前失敗金額：**{current_chip['lose_amount']:,}** 元（最大 100萬）")
 
-# 清除資料
 if st.button("🧹 清除所有資料", use_container_width=True):
     for k in ['history', 'total_profit', 'total_games', 'win_games']:
         st.session_state[k] = [] if k == 'history' else 0
-    # 重置籌碼組金額
     for k in chip_sets.keys():
         chip_sets[k] = {"win_amount": 100, "lose_amount": 100}
     st.success("已清除所有資料並重置籌碼")
 
-st.caption("© 2025 AI 百家樂預測分析系統 | 人性化版")
+st.caption("© 2025 AI 百家樂全自動預測分析系統 | 人性化版")
