@@ -1,5 +1,4 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 
 # 頁面設定
 st.set_page_config(page_title="AI 百家樂全自動預測分析", page_icon="🎰", layout="centered")
@@ -97,12 +96,12 @@ if st.button("提交本局結果", key="submit_result"):
         if outcome == "win":
             st.session_state.win_games += 1
             st.session_state.total_profit += current_chip["win_amount"]
-            current_chip["win_amount"] = min(100_0000, current_chip["win_amount"] + INCREMENT)
+            current_chip["win_amount"] = min(1000000, current_chip["win_amount"] + INCREMENT)
             current_chip["lose_amount"] = max(100, current_chip["lose_amount"] - INCREMENT // 2)
             st.success(f"勝利！累積獲利 +{current_chip['win_amount'] - INCREMENT} 元")
         elif outcome == "lose":
             st.session_state.total_profit -= current_chip["lose_amount"]
-            current_chip["lose_amount"] = min(100_0000, current_chip["lose_amount"] + INCREMENT)
+            current_chip["lose_amount"] = min(1000000, current_chip["lose_amount"] + INCREMENT)
             current_chip["win_amount"] = max(100, current_chip["win_amount"] - INCREMENT // 2)
             st.error(f"失敗！累積損失 -{current_chip['lose_amount'] - INCREMENT} 元")
         else:
@@ -151,33 +150,26 @@ if len(last4) >= 3:
         suggestion = "無明顯趨勢，建議觀望或小注"
 st.info(f"🎯 {suggestion}")
 
-# ---------- 第三區：走勢圖 ----------
+# ---------- 走勢圖功能 (隱藏) ----------
+# 這裡保留函式，但不畫圖，不佔版面
 def plot_trend():
+    # 保留走勢資料計算邏輯（如果未來要調用）
     if not h:
-        st.warning("無資料可繪製走勢圖")
         return
     mapping = {"B": 1, "P": 0, "T": 0.5}
     data = [mapping[x] for x in h[-30:]]
-    fig, ax = plt.subplots(figsize=(8, 3))
-    ax.plot(range(1, len(data)+1), data, marker='o', color="#FF6F61", linestyle='-', linewidth=2)
-    ax.set_title("近 30 局莊閒和走勢圖", fontsize=14)
-    ax.set_xlabel("局數")
-    ax.set_ylabel("結果")
-    ax.set_yticks([0, 0.5, 1])
-    ax.set_yticklabels(["閒 (0)", "和 (0.5)", "莊 (1)"])
-    ax.grid(True, linestyle="--", alpha=0.5)
-    st.pyplot(fig)
+    # 不顯示圖表
 
 plot_trend()
 
-# ---------- 第四區：歷史紀錄 ----------
+# ---------- 第三區：歷史紀錄 ----------
 st.header("🕒 歷史紀錄")
 if h:
     st.text_area("歷史輸入記錄", " ".join(h), height=120, disabled=True)
 else:
     st.info("尚無紀錄，請開始輸入資料")
 
-# ---------- 第五區：籌碼管理 ----------
+# ---------- 第四區：籌碼管理 ----------
 st.header("🎲 籌碼管理")
 
 chip_names = list(chip_sets.keys())
@@ -195,4 +187,4 @@ if st.button("🧹 清除所有資料", use_container_width=True):
         chip_sets[k] = {"win_amount": 100, "lose_amount": 100}
     st.success("已清除所有資料並重置籌碼")
 
-st.caption("© 2025 AI 百家樂全自動預測分析系統 | 人性化版")
+st.caption("© 2025 AI 百家樂全自動預測分析系統 | 走勢圖隱藏版")
