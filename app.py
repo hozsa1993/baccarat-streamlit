@@ -1,16 +1,11 @@
-# ======================================
-# 📈 AI 百家樂全自動預測分析系統 強化最終版
-# 作者：ChatGPT + 透抽需求客製
-# 功能：激活碼 / 自動計算盈虧 / 日累分離統計 / 注碼建議 / 匯出報表
-# ======================================
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime, date
+from datetime impo
+rt datetime, date
 import io
 
-# ---------- 激活碼驗證 ---------- #
+# ========== 激活碼驗證 ========== #
 PASSWORD = "aa17888"
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
@@ -25,7 +20,7 @@ if not st.session_state.access_granted:
             st.error("激活碼錯誤，請重新輸入")
     st.stop()
 
-# ---------- 初始化 ---------- #
+# ========== 初始化 ========== #
 def init_state():
     defaults = {
         'history': [],
@@ -45,24 +40,24 @@ def init_state():
             st.session_state[k] = v
 init_state()
 
-# ---------- 每日重置 ---------- #
+# ========== 每日重置 ========== #
 if st.session_state.last_reset_date != str(date.today()):
     st.session_state.daily_profit = 0
     st.session_state.daily_games = 0
     st.session_state.daily_wins = 0
     st.session_state.last_reset_date = str(date.today())
 
-# ---------- 標題 ---------- #
+# ========== 標題 ========== #
 st.markdown("""
 <h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂預測分析 強化版</h1>
 <p style='text-align:center; color:gray;'>自動計算｜日累統計｜下注建議｜手機友善</p>
 """, unsafe_allow_html=True)
 
-# ---------- 區塊：自動計算選擇 ---------- #
+# ========== 自動計算選擇 ========== #
 st.checkbox("自動計算盈虧 (輸入本局結果後自動計入盈虧)", key="auto_calc")
 st.divider()
 
-# ---------- 區塊：輸入本局結果 ---------- #
+# ========== 輸入本局結果 ========== #
 st.subheader("🎮 輸入本局結果")
 col1, col2, col3 = st.columns(3)
 current_chip = st.session_state.chip_sets[st.session_state.current_chip_set]
@@ -98,7 +93,7 @@ with col3:
 
 st.divider()
 
-# ---------- 區塊：勝負確認 (手動計算用) ---------- #
+# ========== 勝負確認 ========== #
 st.subheader("💰 勝負確認 (手動加減)")
 c1, c2 = st.columns(2)
 with c1:
@@ -119,7 +114,7 @@ if st.button("🧹 清除所有資料", use_container_width=True):
 
 st.divider()
 
-# ---------- 區塊：統計資料 ---------- #
+# ========== 統計資料 ========== #
 st.subheader("📊 統計資料")
 daily_win_rate = (st.session_state.daily_wins / st.session_state.daily_games * 100) if st.session_state.daily_games else 0
 total_win_rate = (st.session_state.total_wins / st.session_state.total_games * 100) if st.session_state.total_games else 0
@@ -130,7 +125,7 @@ with c1:
 with c2:
     st.success(f"累計｜局數: {st.session_state.total_games}｜勝場: {st.session_state.total_wins}｜獲利: {st.session_state.total_profit:,}｜勝率: {total_win_rate:.1f}%")
 
-# ---------- 區塊：下注建議 ---------- #
+# ========== 下注建議 ========== #
 st.subheader("🎯 下注建議")
 h = [x['result'] for x in st.session_state.history]
 if len(h) >= 5:
@@ -144,7 +139,7 @@ if len(h) >= 5:
 else:
     st.info("資料不足，無法給出建議")
 
-# ---------- 區塊：走勢圖 ---------- #
+# ========== 走勢圖 ========== #
 st.subheader("📈 近 30 局走勢圖")
 if h:
     mapping = {"B": 1, "P": 0, "T": 0.5}
@@ -160,7 +155,18 @@ else:
 
 st.divider()
 
-# ---------- 區塊：籌碼設定 ---------- #
+# ========== 匯出報表 ========== #
+st.subheader("📤 匯出報表")
+if st.button("匯出 CSV 報表"):
+    if st.session_state.history:
+        df = pd.DataFrame(st.session_state.history)
+        csv = df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button("下載報表", data=csv, file_name="baccarat_report.csv", mime="text/csv")
+    else:
+        st.warning("目前無資料可匯出")
+
+# ========== 籌碼設定（已移到底部） ========== #
+st.divider()
 st.subheader("🎲 籌碼設定 (下拉簡化)")
 chip_names = list(st.session_state.chip_sets.keys())
 selected_chip = st.selectbox("選擇籌碼組", chip_names, index=chip_names.index(st.session_state.current_chip_set))
@@ -179,17 +185,5 @@ with st.expander("➕ 新增籌碼組"):
             st.session_state.current_chip_set = new_name
             st.success(f"已新增 {new_name}")
             st.experimental_rerun()
-
-st.divider()
-
-# ---------- 區塊：匯出報表 ---------- #
-st.subheader("📤 匯出報表")
-if st.button("匯出 CSV 報表"):
-    if st.session_state.history:
-        df = pd.DataFrame(st.session_state.history)
-        csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("下載報表", data=csv, file_name="baccarat_report.csv", mime="text/csv")
-    else:
-        st.warning("目前無資料可匯出")
 
 st.caption("© 2025 AI 百家樂全自動預測分析系統 強化版 | 透抽專用")
