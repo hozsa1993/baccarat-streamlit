@@ -39,34 +39,7 @@ def init_state():
             st.session_state[k] = v
 init_state()
 
-# --- 功能方法 ---
-def add_history(result):
-    st.session_state.history.append(result)
-    st.session_state.total_games += 1
-    if result == "B":
-        st.session_state.count_B += 1
-    elif result == "P":
-        st.session_state.count_P += 1
-    elif result == "T":
-        st.session_state.count_T += 1
-
-def update_result(win: bool):
-    chip = st.session_state.chip_sets[st.session_state.current_chip_set]
-    if win:
-        st.session_state.total_profit += chip["win_amount"]
-        st.session_state.win_games += 1
-    else:
-        st.session_state.total_profit -= chip["lose_amount"]
-
-def reset_all():
-    st.session_state.history = []
-    st.session_state.total_profit = 0
-    st.session_state.total_games = 0
-    st.session_state.win_games = 0
-    st.session_state.count_B = 0
-    st.session_state.count_P = 0
-    st.session_state.count_T = 0
-
+# --- 計算與建議下注 ---
 def longest_streak(seq, char):
     max_streak = streak = 0
     for c in seq:
@@ -132,29 +105,13 @@ def suggest_bet_advanced():
     mapping = {"B": "莊 (B)", "P": "閒 (P)", "T": "和 (T)"}
     return f"建議下注：{mapping[top]} (信心 {scores[top]:.2f})"
 
-def display_stats():
-    banker = st.session_state.count_B
-    player = st.session_state.count_P
-    tie = st.session_state.count_T
-    total = st.session_state.total_games
-    win_games = st.session_state.win_games
-    total_profit = st.session_state.total_profit
-    win_rate = (win_games / total * 100) if total else 0
-
-    st.subheader("📊 統計資料")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("莊 (B)", banker)
-    col2.metric("閒 (P)", player)
-    col3.metric("和 (T)", tie)
-    col4.metric("總局數", total)
-
-    if total > 0:
-        st.info(f"勝率｜莊: {banker/total*100:.1f}% | 閒: {player/total*100:.1f}% | 和: {tie/total*100:.1f}%")
-
-    st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
-
-# --- 介面開始 ---
+# --- UI 開始 ---
 st.markdown("<h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂全自動預測</h1>", unsafe_allow_html=True)
+st.divider()
+
+# 建議下注 (拉到最上方)
+st.subheader("🎯 下注建議")
+st.info(suggest_bet_advanced())
 st.divider()
 
 # 輸入本局結果
@@ -162,13 +119,19 @@ st.subheader("🎮 輸入本局結果")
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("🟥 莊 (B)", use_container_width=True):
-        add_history("B")
+        st.session_state.history.append("B")
+        st.session_state.total_games += 1
+        st.session_state.count_B += 1
 with col2:
     if st.button("🟦 閒 (P)", use_container_width=True):
-        add_history("P")
+        st.session_state.history.append("P")
+        st.session_state.total_games += 1
+        st.session_state.count_P += 1
 with col3:
     if st.button("🟩 和 (T)", use_container_width=True):
-        add_history("T")
+        st.session_state.history.append("T")
+        st.session_state.total_games += 1
+        st.session_state.count_T += 1
 st.divider()
 
 # 勝負確認
@@ -180,23 +143,41 @@ st.subheader("💰 勝負確認")
 col1, col2 = st.columns(2)
 with col1:
     if st.button(f"✅ 勝利 (+{win_amount:,})", use_container_width=True):
-        update_result(True)
+        st.session_state.total_profit += win_amount
+        st.session_state.win_games += 1
 with col2:
     if st.button(f"❌ 失敗 (-{lose_amount:,})", use_container_width=True):
-        update_result(False)
+        st.session_state.total_profit -= lose_amount
 
 if st.button("🧹 清除資料", use_container_width=True):
-    reset_all()
+    st.session_state.history = []
+    st.session_state.total_profit = 0
+    st.session_state.total_games = 0
+    st.session_state.win_games = 0
+    st.session_state.count_B = 0
+    st.session_state.count_P = 0
+    st.session_state.count_T = 0
     st.success("已清除所有資料")
     st.experimental_rerun()
 st.divider()
 
-# **建議下注（往上拉，統計資料之前）**
-st.subheader("🎯 下注建議")
-st.info(suggest_bet_advanced())
-
 # 統計資料
-display_stats()
+st.subheader("📊 統計資料")
+total = st.session_state.total_games
+win_games = st.session_state.win_games
+total_profit = st.session_state.total_profit
+win_rate = (win_games / total * 100) if total else 0
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("莊 (B)", st.session_state.count_B)
+col2.metric("閒 (P)", st.session_state.count_P)
+col3.metric("和 (T)", st.session_state.count_T)
+col4.metric("總局數", total)
+
+if total > 0:
+    st.info(f"勝率｜莊: {st.session_state.count_B/total*100:.1f}% | 閒: {st.session_state.count_P/total*100:.1f}% | 和: {st.session_state.count_T/total*100:.1f}%")
+
+st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
 st.divider()
 
 # 走勢圖
@@ -232,11 +213,10 @@ with st.expander("➕ 新增籌碼組"):
     new_name = st.text_input("名稱", max_chars=20)
 
     amount_options = list(range(100, 1_000_001, 100))
-    default_win_index = amount_options.index(100)
-    default_lose_index = amount_options.index(100)
+    default_index = amount_options.index(100)
 
-    new_win = st.selectbox("勝利金額", amount_options, index=default_win_index)
-    new_lose = st.selectbox("失敗金額", amount_options, index=default_lose_index)
+    new_win = st.selectbox("勝利金額", amount_options, index=default_index)
+    new_lose = st.selectbox("失敗金額", amount_options, index=default_index)
 
     if st.button("新增"):
         if new_name.strip() and new_name not in st.session_state.chip_sets:
