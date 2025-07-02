@@ -45,6 +45,10 @@ if not st.session_state.access_granted:
 # ===== 初始化狀態 =====
 if "history" not in st.session_state or not isinstance(st.session_state.history, list):
     st.session_state.history = []
+else:
+    # 強制所有元素轉成字串，避免資料異常
+    st.session_state.history = [str(x) for x in st.session_state.history]
+
 if "total_games" not in st.session_state:
     st.session_state.total_games = 0
 if "win_games" not in st.session_state:
@@ -81,6 +85,8 @@ def create_dataset(history, window=3):
     data = encode_result(history)
     X, y = [], []
     for i in range(len(data) - window):
+        if -1 in data[i:i+window+1]:
+            continue  # 略過無效資料
         X.append(data[i:i+window])
         y.append(data[i+window])
     return np.array(X), np.array(y)
@@ -90,6 +96,8 @@ def ml_predict(history, window=3):
     if len(history) < window + 1:
         return "資料不足無法預測"
     X, y = create_dataset(history, window)
+    if len(X) == 0:
+        return "資料不足無法預測"
     model = RandomForestClassifier(n_estimators=100, random_state=42)
     model.fit(X, y)
     last_seq = np.array(encode_result(history[-window:])).reshape(1, -1)
@@ -149,7 +157,7 @@ with col3:
 
 # ===== 更新狀態與勝負判定 =====
 def update_after_result(result):
-    st.session_state.history.append(result)
+    st.session_state.history.append(str(result))  # 強制字串
     st.session_state.total_games += 1
     st.session_state.balance -= current_bet
     win = False
@@ -197,7 +205,7 @@ if st.session_state.history:
     st.markdown("### 📈 莊 / 閒 / 和 走勢圖")
     fig, ax = plt.subplots(figsize=(10, 3))
     mapping = {"P": 1, "T": 0, "B": -1}
-    y = [mapping[i] for i in st.session_state.history]
+    y = [mapping.get(i, 0) for i in st.session_state.history]  # 預防不明字串
     ax.plot(y, marker='o', color='deepskyblue')
     ax.axhline(0, color='white', linestyle='--', linewidth=0.5)
     ax.set_yticks([-1,0,1])
@@ -208,9 +216,16 @@ if st.session_state.history:
     st.pyplot(fig)
 
 # ===== 顯示完整歷史 =====
+def safe_history_display(history):
+    try:
+        return [str(x) for x in history]
+    except Exception as e:
+        return [f"轉換錯誤: {e}"]
+
 with st.expander("📜 查看完整輸入歷史"):
     try:
-        st.text(st.session_state.history)
+        safe_list = safe_history_display(st.session_state.history)
+        st.write(safe_list)
     except Exception as e:
         st.error(f"顯示歷史錯誤: {e}")
         st.write(str(st.session_state.history))
