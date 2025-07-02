@@ -122,16 +122,19 @@ with col1:
         st.session_state.history.append("B")
         st.session_state.total_games += 1
         st.session_state.count_B += 1
+        st.experimental_rerun()
 with col2:
     if st.button("🟦 閒 (P)", use_container_width=True):
         st.session_state.history.append("P")
         st.session_state.total_games += 1
         st.session_state.count_P += 1
+        st.experimental_rerun()
 with col3:
     if st.button("🟩 和 (T)", use_container_width=True):
         st.session_state.history.append("T")
         st.session_state.total_games += 1
         st.session_state.count_T += 1
+        st.experimental_rerun()
 st.divider()
 
 # 勝負確認
@@ -145,9 +148,11 @@ with col1:
     if st.button(f"✅ 勝利 (+{win_amount:,})", use_container_width=True):
         st.session_state.total_profit += win_amount
         st.session_state.win_games += 1
+        st.experimental_rerun()
 with col2:
     if st.button(f"❌ 失敗 (-{lose_amount:,})", use_container_width=True):
         st.session_state.total_profit -= lose_amount
+        st.experimental_rerun()
 
 if st.button("🧹 清除資料", use_container_width=True):
     st.session_state.history = []
@@ -212,11 +217,8 @@ st.write(f"💸 失敗金額: {st.session_state.chip_sets[selected_chip]['lose_a
 with st.expander("➕ 新增籌碼組"):
     new_name = st.text_input("名稱", max_chars=20)
 
-    amount_options = list(range(100, 1_000_001, 100))
-    default_index = amount_options.index(100)
-
-    new_win = st.selectbox("勝利金額", amount_options, index=default_index)
-    new_lose = st.selectbox("失敗金額", amount_options, index=default_index)
+    new_win = st.number_input("勝利金額", min_value=100, max_value=1_000_000, value=100, step=100)
+    new_lose = st.number_input("失敗金額", min_value=100, max_value=1_000_000, value=100, step=100)
 
     if st.button("新增"):
         if new_name.strip() and new_name not in st.session_state.chip_sets:
@@ -228,4 +230,3 @@ with st.expander("➕ 新增籌碼組"):
             st.warning("名稱不可空白或重複")
 
 st.caption("© 2025 AI 百家樂全自動預測分析系統 | 手機友善優化版")
-
