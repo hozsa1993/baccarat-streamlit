@@ -46,7 +46,6 @@ if not st.session_state.access_granted:
 if "history" not in st.session_state or not isinstance(st.session_state.history, list):
     st.session_state.history = []
 else:
-    # 強制所有元素轉成字串，避免資料異常
     st.session_state.history = [str(x) for x in st.session_state.history]
 
 if "total_games" not in st.session_state:
@@ -86,28 +85,29 @@ def create_dataset(history, window=3):
     X, y = [], []
     for i in range(len(data) - window):
         if -1 in data[i:i+window+1]:
-            continue  # 略過無效資料
+            continue
         X.append(data[i:i+window])
         y.append(data[i+window])
     return np.array(X), np.array(y)
 
-# ===== ML 預測 =====
-def ml_predict(history, window=3):
+# ===== ML 預測(含機率) =====
+def ml_predict_with_proba(history, window=3):
     if len(history) < window + 1:
-        return "資料不足無法預測"
+        return "資料不足無法預測", None
     X, y = create_dataset(history, window)
     if len(X) == 0:
-        return "資料不足無法預測"
+        return "資料不足無法預測", None
     model = RandomForestClassifier(n_estimators=100, random_state=42)
     model.fit(X, y)
     last_seq = np.array(encode_result(history[-window:])).reshape(1, -1)
     pred = model.predict(last_seq)[0]
+    proba = model.predict_proba(last_seq)[0]
     mapping = {0:'閒 (P)', 1:'莊 (B)', 2:'和 (T)'}
-    return mapping.get(pred, "未知")
+    return mapping.get(pred, "未知"), proba
 
-ml_prediction = ml_predict(st.session_state.history)
+ml_prediction, ml_proba = ml_predict_with_proba(st.session_state.history)
 
-# ===== 策略下注金額計算 =====
+# ===== 計算下注金額 =====
 def calc_bet_amount(strategy):
     base_bet = st.session_state.bet_amount
     if strategy == "1326策略":
@@ -130,13 +130,18 @@ def calc_bet_amount(strategy):
 current_bet = calc_bet_amount(strategy)
 
 # ===== 顯示資訊 =====
-cols = st.columns(5)
+cols = st.columns(6)
 cols[0].metric("已輸入牌數", len(st.session_state.history))
 cols[1].metric("局數", f"#{st.session_state.total_games}")
 acc = (st.session_state.win_games / st.session_state.total_games * 100) if st.session_state.total_games else 0
 cols[2].metric("模型準確率", f"{acc:.1f}%")
 cols[3].metric("當前本金", f"${st.session_state.balance}")
-cols[4].metric("機器學習預測下一局", ml_prediction)
+cols[4].metric("預測結果", ml_prediction)
+if ml_proba is not None:
+    proba_pct = [f"{p*100:.1f}%" for p in ml_proba]
+    cols[5].metric("預測機率 (閒/莊/和)", f"{proba_pct[0]} / {proba_pct[1]} / {proba_pct[2]}")
+else:
+    cols[5].metric("預測機率", "無法計算")
 
 st.markdown(f"### 本局下注金額: ${current_bet}")
 
@@ -157,7 +162,7 @@ with col3:
 
 # ===== 更新狀態與勝負判定 =====
 def update_after_result(result):
-    st.session_state.history.append(str(result))  # 強制字串
+    st.session_state.history.append(str(result))
     st.session_state.total_games += 1
     st.session_state.balance -= current_bet
     win = False
@@ -200,20 +205,35 @@ if clicked:
     update_after_result(clicked)
     st.experimental_rerun()
 
-# ===== 繪製走勢圖 =====
+# ===== 繪製走勢圖（強化版） =====
 if st.session_state.history:
     st.markdown("### 📈 莊 / 閒 / 和 走勢圖")
-    fig, ax = plt.subplots(figsize=(10, 3))
+    fig, ax = plt.subplots(figsize=(12, 4))
     mapping = {"P": 1, "T": 0, "B": -1}
-    y = [mapping.get(i, 0) for i in st.session_state.history]  # 預防不明字串
-    ax.plot(y, marker='o', color='deepskyblue')
-    ax.axhline(0, color='white', linestyle='--', linewidth=0.5)
-    ax.set_yticks([-1,0,1])
-    ax.set_yticklabels(["莊","和","閒"])
-    ax.set_xlabel("局數")
-    ax.set_title("走勢圖")
-    ax.grid(True, alpha=0.2)
+    y = [mapping.get(i, 0) for i in st.session_state.history]
+
+    # 走勢線
+    ax.plot(y, marker='o', linestyle='-', linewidth=2, markersize=8)
+
+    # 色彩標記，莊藍、閒紅、和綠
+    for i, val in enumerate(y):
+        color = 'deepskyblue' if val == -1 else ('red' if val == 1 else 'green')
+        ax.plot(i, val, marker='o', color=color, markersize=12)
+
+    ax.axhline(0, color='white', linestyle='--', linewidth=0.7)
+    ax.set_yticks([-1, 0, 1])
+    ax.set_yticklabels(["莊", "和", "閒"], fontsize=14)
+    ax.set_xlabel("局數", fontsize=14)
+    ax.set_title("走勢圖（莊藍 / 閒紅 / 和綠）", fontsize=16)
+    ax.grid(True, alpha=0.3)
     st.pyplot(fig)
+
+    # 顯示莊閒和勝率
+    total = len(st.session_state.history)
+    count_p = st.session_state.history.count('P')
+    count_b = st.session_state.history.count('B')
+    count_t = st.session_state.history.count('T')
+    st.markdown(f"**統計數據：** 總局數: {total} | 閒勝率: {count_p/total*100:.2f}% | 莊勝率: {count_b/total*100:.2f}% | 和局率: {count_t/total*100:.2f}%")
 
 # ===== 顯示完整歷史 =====
 def safe_history_display(history):
