@@ -39,6 +39,7 @@ def init_state():
             st.session_state[k] = v
 init_state()
 
+# --- 功能方法 ---
 def add_history(result):
     st.session_state.history.append(result)
     st.session_state.total_games += 1
@@ -80,7 +81,7 @@ def weighted_prob(history, target, window=10):
     if len(history) == 0:
         return 0
     recent = history[-window:]
-    weights = list(range(1, len(recent) + 1))  # 權重從1開始往上加
+    weights = list(range(1, len(recent) + 1))
     total_weight = sum(weights)
     weighted_count = sum(w for h, w in zip(recent, weights) if h == target)
     return weighted_count / total_weight
@@ -152,6 +153,7 @@ def display_stats():
 
     st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
 
+# --- 介面開始 ---
 st.markdown("<h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂全自動預測</h1>", unsafe_allow_html=True)
 st.divider()
 
@@ -189,10 +191,11 @@ if st.button("🧹 清除資料", use_container_width=True):
     st.experimental_rerun()
 st.divider()
 
-# 建議下注（放勝負確認後、統計資料前）
+# **建議下注（往上拉，統計資料之前）**
 st.subheader("🎯 下注建議")
 st.info(suggest_bet_advanced())
 
+# 統計資料
 display_stats()
 st.divider()
 
@@ -216,7 +219,7 @@ def plot_trend():
 plot_trend()
 st.divider()
 
-# 籌碼設定（放最底）
+# 籌碼設定
 st.subheader("🎲 籌碼設定 (簡易切換)")
 chip_names = list(st.session_state.chip_sets.keys())
 selected_chip = st.selectbox("選擇籌碼組", chip_names, index=chip_names.index(st.session_state.current_chip_set))
