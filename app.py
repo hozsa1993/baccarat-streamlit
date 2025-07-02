@@ -1,15 +1,34 @@
 import streamlit as st
 import matplotlib.pyplot as plt
-import math
 
 # 頁面設定
 st.set_page_config(page_title="AI 百家樂預測分析", page_icon="🎰", layout="centered")
 
-# --- 激活碼驗證 ---
+# 黑色主題CSS
+st.markdown("""
+<style>
+body, .main {
+    background-color: #0f0f0f !important;
+    color: #e0e0e0 !important;
+}
+.stButton>button {
+    height: 80px !important;
+    font-size: 30px !important;
+    border-radius: 12px !important;
+}
+.stButton>button:hover {
+    opacity: 0.85;
+}
+.metric-label, .metric-value {
+    color: #e0e0e0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# 激活碼驗證
 PASSWORD = "baccarat2025"
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
-
 if not st.session_state.access_granted:
     st.markdown("<h1 style='text-align:center; color:#FF6F61;'>請輸入激活碼以使用系統</h1>", unsafe_allow_html=True)
     password_input = st.text_input("激活碼 (密碼)", type="password")
@@ -21,210 +40,198 @@ if not st.session_state.access_granted:
             st.error("激活碼錯誤，請重新輸入")
     st.stop()
 
-# --- 初始化 ---
-def init_state():
-    defaults = {
-        'history': [],
-        'total_profit': 0,
-        'total_games': 0,
-        'win_games': 0,
-        'count_B': 0,
-        'count_P': 0,
-        'count_T': 0,
-        'chip_sets': {'預設籌碼': {'win_amount': 100, 'lose_amount': 100}},
-        'current_chip_set': '預設籌碼',
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-init_state()
-
-# --- 計算與建議下注 ---
-def longest_streak(seq, char):
-    max_streak = streak = 0
-    for c in seq:
-        if c == char:
-            streak += 1
-            max_streak = max(max_streak, streak)
-        else:
-            streak = 0
-    return max_streak
-
-def weighted_prob(history, target, window=10):
-    if len(history) == 0:
-        return 0
-    recent = history[-window:]
-    weights = list(range(1, len(recent) + 1))
-    total_weight = sum(weights)
-    weighted_count = sum(w for h, w in zip(recent, weights) if h == target)
-    return weighted_count / total_weight
-
-def streak_score(streak, max_streak=7):
-    if streak == 0:
-        return 0
-    return (math.exp(streak) - 1) / (math.exp(max_streak) - 1)
-
-def reversal_score(history, target, window=6):
-    if len(history) < window:
-        return 0
-    recent = history[-window:]
-    count_target = recent.count(target)
-    if count_target >= window - 1:
-        return 1
-    return 0
-
-def suggest_bet_advanced():
-    h = st.session_state.history
-    if len(h) < 5:
-        return "資料不足，暫無建議"
-
-    b_prob = weighted_prob(h, "B")
-    p_prob = weighted_prob(h, "P")
-    t_prob = weighted_prob(h, "T")
-
-    b_streak = streak_score(longest_streak(h, "B"))
-    p_streak = streak_score(longest_streak(h, "P"))
-    t_streak = streak_score(longest_streak(h, "T"))
-
-    b_rev = reversal_score(h, "B")
-    p_rev = reversal_score(h, "P")
-    t_rev = reversal_score(h, "T")
-
-    w_prob, w_streak, w_rev = 0.5, 0.3, 0.2
-
-    scores = {
-        "B": b_prob * w_prob + b_streak * w_streak + b_rev * w_rev,
-        "P": p_prob * w_prob + p_streak * w_streak + p_rev * w_rev,
-        "T": t_prob * w_prob + t_streak * w_streak + t_rev * w_rev,
-    }
-
-    top = max(scores, key=scores.get)
-    if scores[top] < 0.3:
-        return "趨勢不明，建議觀望"
-
-    mapping = {"B": "莊 (B)", "P": "閒 (P)", "T": "和 (T)"}
-    return f"建議下注：{mapping[top]} (信心 {scores[top]:.2f})"
-
-# --- UI 開始 ---
-st.markdown("<h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂全自動預測</h1>", unsafe_allow_html=True)
-st.divider()
-
-# 建議下注 (拉到最上方)
-st.subheader("🎯 下注建議")
-st.info(suggest_bet_advanced())
-st.divider()
-
-# 輸入本局結果
-st.subheader("🎮 輸入本局結果")
-col1, col2, col3 = st.columns(3)
-with col1:
-    if st.button("🟥 莊 (B)", use_container_width=True):
-        st.session_state.history.append("B")
-        st.session_state.total_games += 1
-        st.session_state.count_B += 1
-with col2:
-    if st.button("🟦 閒 (P)", use_container_width=True):
-        st.session_state.history.append("P")
-        st.session_state.total_games += 1
-        st.session_state.count_P += 1
-with col3:
-    if st.button("🟩 和 (T)", use_container_width=True):
-        st.session_state.history.append("T")
-        st.session_state.total_games += 1
-        st.session_state.count_T += 1
-st.divider()
-
-# 勝負確認
-current_chip = st.session_state.chip_sets[st.session_state.current_chip_set]
-win_amount = current_chip["win_amount"]
-lose_amount = current_chip["lose_amount"]
-
-st.subheader("💰 勝負確認")
-col1, col2 = st.columns(2)
-with col1:
-    if st.button(f"✅ 勝利 (+{win_amount:,})", use_container_width=True):
-        st.session_state.total_profit += win_amount
-        st.session_state.win_games += 1
-with col2:
-    if st.button(f"❌ 失敗 (-{lose_amount:,})", use_container_width=True):
-        st.session_state.total_profit -= lose_amount
-
-if st.button("🧹 清除資料", use_container_width=True):
+# 初始化
+if "history" not in st.session_state:
     st.session_state.history = []
-    st.session_state.total_profit = 0
+if "total_games" not in st.session_state:
     st.session_state.total_games = 0
+if "win_games" not in st.session_state:
     st.session_state.win_games = 0
-    st.session_state.count_B = 0
-    st.session_state.count_P = 0
-    st.session_state.count_T = 0
-    st.success("已清除所有資料")
+if "balance" not in st.session_state:
+    st.session_state.balance = 1000
+if "bet_amount" not in st.session_state:
+    st.session_state.bet_amount = 100
+if "strategy" not in st.session_state:
+    st.session_state.strategy = "無策略"
+if "martingale_step" not in st.session_state:
+    st.session_state.martingale_step = 0
+if "martingale_lost" not in st.session_state:
+    st.session_state.martingale_lost = False
+if "count_1326" not in st.session_state:
+    st.session_state.count_1326 = 0
+if "lost_1326" not in st.session_state:
+    st.session_state.lost_1326 = False
+
+# 選擇策略
+strategy = st.selectbox("選擇下注策略", ["無策略", "1326策略", "馬丁策略", "反馬丁策略"], index=0)
+st.session_state.strategy = strategy
+
+# 輸入本局下注金額（若策略是無策略或1326，手動輸入有效）
+if strategy == "無策略":
+    bet_amount = st.number_input("本局下注金額", min_value=10, max_value=10000, value=st.session_state.bet_amount, step=10)
+    st.session_state.bet_amount = bet_amount
+else:
+    st.markdown(f"本局下注金額將由【{strategy}】策略自動計算")
+
+# 簡單預測模型：統計歷史牌局偏向，預測下一局結果
+def predict_next(history):
+    if not history:
+        return "無法預測"
+    count_p = history.count("P")
+    count_b = history.count("B")
+    count_t = history.count("T")
+    total = len(history)
+    # 偏向出現次數最高的牌作為預測
+    max_count = max(count_p, count_b, count_t)
+    if max_count == count_p:
+        return "閒 (P)"
+    elif max_count == count_b:
+        return "莊 (B)"
+    else:
+        return "和 (T)"
+
+prediction = predict_next(st.session_state.history)
+
+# 計算策略下注金額
+def calc_bet_amount(strategy):
+    if strategy == "1326策略":
+        # 1326下注倍數序列
+        seq = [1, 3, 2, 6]
+        step = st.session_state.count_1326
+        amount = seq[step] * 100  # 基本下注100元乘以倍數
+        return amount
+    elif strategy == "馬丁策略":
+        # 馬丁倍投法，每輸一次下注翻倍
+        base = 100
+        step = st.session_state.martingale_step
+        return base * (2 ** step)
+    elif strategy == "反馬丁策略":
+        # 反馬丁，贏一次下注翻倍，輸一次回到初始
+        base = 100
+        step = st.session_state.martingale_step
+        return base * (2 ** step)
+    else:
+        return st.session_state.bet_amount
+
+current_bet = calc_bet_amount(strategy)
+
+# 顯示狀態欄
+cols = st.columns(5)
+cols[0].metric("已輸入牌數", len(st.session_state.history))
+cols[1].metric("局數", f"#{st.session_state.total_games}")
+acc = (st.session_state.win_games / st.session_state.total_games * 100) if st.session_state.total_games else 0
+cols[2].metric("模型準確率", f"{acc:.1f}%")
+cols[3].metric("當前本金", f"${st.session_state.balance}")
+cols[4].metric("預測下一局", prediction)
+
+# 下注金額顯示
+st.markdown(f"### 本局下注金額: ${current_bet}")
+
+st.markdown("<h4 style='text-align:center; color:#FF6F61;'>🔴 點擊以下按鈕輸入本局結果</h4>", unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+clicked = None
+with col1:
+    if st.button("🟦 閒 (P)", use_container_width=True):
+        clicked = "P"
+with col2:
+    if st.button("🟩 和 (T)", use_container_width=True):
+        clicked = "T"
+with col3:
+    if st.button("🟥 莊 (B)", use_container_width=True):
+        clicked = "B"
+
+def update_after_result(result):
+    st.session_state.history.append(result)
+    st.session_state.total_games += 1
+
+    # 判定勝利：假設下注方為閒或莊（和局不計勝負）
+    # 這裡示範「下注方 = 預測最大偏向」簡易勝負判定，實際可依下注邏輯改寫
+
+    # 先扣除下注金額
+    st.session_state.balance -= current_bet
+
+    win = False
+
+    if result == "T":
+        # 和局返還本金
+        st.session_state.balance += current_bet
+    else:
+        # 簡易勝負判定：若下注方與結果相同則勝
+        # 預測下注方 = 偏向最多的牌
+        if prediction.startswith("閒") and result == "P":
+            win = True
+        elif prediction.startswith("莊") and result == "B":
+            win = True
+        else:
+            win = False
+
+        if win:
+            st.session_state.win_games += 1
+            if result == "P":
+                st.session_state.balance += current_bet * 2  # 閒贏1倍
+            elif result == "B":
+                st.session_state.balance += int(current_bet * 1.95)  # 莊贏需扣5%抽水
+        else:
+            # 失敗不額外動作（下注金已扣）
+            pass
+
+    # 策略下注管理
+    if st.session_state.strategy == "1326策略":
+        if win:
+            st.session_state.count_1326 = 0
+            st.session_state.lost_1326 = False
+        else:
+            st.session_state.count_1326 += 1
+            if st.session_state.count_1326 > 3:
+                st.session_state.count_1326 = 0  # 循環重置
+    elif st.session_state.strategy == "馬丁策略":
+        if win:
+            st.session_state.martingale_step = 0
+            st.session_state.martingale_lost = False
+        else:
+            st.session_state.martingale_step += 1
+            st.session_state.martingale_lost = True
+    elif st.session_state.strategy == "反馬丁策略":
+        if win:
+            st.session_state.martingale_step += 1
+        else:
+            st.session_state.martingale_step = 0
+
+if clicked:
+    update_after_result(clicked)
     st.experimental_rerun()
-st.divider()
 
-# 統計資料
-st.subheader("📊 統計資料")
-total = st.session_state.total_games
-win_games = st.session_state.win_games
-total_profit = st.session_state.total_profit
-win_rate = (win_games / total * 100) if total else 0
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("莊 (B)", st.session_state.count_B)
-col2.metric("閒 (P)", st.session_state.count_P)
-col3.metric("和 (T)", st.session_state.count_T)
-col4.metric("總局數", total)
-
-if total > 0:
-    st.info(f"勝率｜莊: {st.session_state.count_B/total*100:.1f}% | 閒: {st.session_state.count_P/total*100:.1f}% | 和: {st.session_state.count_T/total*100:.1f}%")
-
-st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
-st.divider()
-
-# 走勢圖
-def plot_trend():
-    h = st.session_state.history
-    if not h:
-        st.info("尚無資料")
-        return
-    mapping = {"B": 1, "P": 0, "T": 0.5}
-    data = [mapping[x] for x in h[-30:]]
-    fig, ax = plt.subplots(figsize=(8, 3))
-    ax.plot(range(1, len(data)+1), data, marker='o', color="#FF6F61", linewidth=2)
-    ax.set_title("近30局走勢")
+# 走勢圖繪製
+if st.session_state.history:
+    st.markdown("### 📈 莊 / 閒 / 和 走勢圖")
+    fig, ax = plt.subplots(figsize=(10, 3))
+    mapping = {"P": 1, "T": 0, "B": -1}
+    y = [mapping[i] for i in st.session_state.history]
+    ax.plot(y, marker='o', color='deepskyblue')
+    ax.axhline(0, color='white', linestyle='--', linewidth=0.5)
+    ax.set_yticks([-1, 0, 1])
+    ax.set_yticklabels(["莊", "和", "閒"])
     ax.set_xlabel("局數")
-    ax.set_yticks([0, 0.5, 1])
-    ax.set_yticklabels(["閒", "和", "莊"])
-    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.set_title("走勢圖")
+    ax.grid(True, alpha=0.2)
     st.pyplot(fig)
 
-plot_trend()
-st.divider()
+# 完整歷史查看
+with st.expander("📜 查看完整輸入歷史"):
+    st.write(st.session_state.history)
 
-# 籌碼設定
-st.subheader("🎲 籌碼設定 (簡易切換)")
-chip_names = list(st.session_state.chip_sets.keys())
-selected_chip = st.selectbox("選擇籌碼組", chip_names, index=chip_names.index(st.session_state.current_chip_set))
-st.session_state.current_chip_set = selected_chip
+# 重置
+if st.button("🧹 重置資料"):
+    st.session_state.history = []
+    st.session_state.total_games = 0
+    st.session_state.win_games = 0
+    st.session_state.balance = 1000
+    st.session_state.martingale_step = 0
+    st.session_state.martingale_lost = False
+    st.session_state.count_1326 = 0
+    st.session_state.lost_1326 = False
+    st.session_state.bet_amount = 100
+    st.success("資料已重置")
 
-st.write(f"💰 勝利金額: {st.session_state.chip_sets[selected_chip]['win_amount']:,} 元")
-st.write(f"💸 失敗金額: {st.session_state.chip_sets[selected_chip]['lose_amount']:,} 元")
-
-with st.expander("➕ 新增籌碼組"):
-    new_name = st.text_input("名稱", max_chars=20)
-
-    amount_options = list(range(100, 1_000_001, 100))
-    default_index = amount_options.index(100)
-
-    new_win = st.selectbox("勝利金額", amount_options, index=default_index)
-    new_lose = st.selectbox("失敗金額", amount_options, index=default_index)
-
-    if st.button("新增"):
-        if new_name.strip() and new_name not in st.session_state.chip_sets:
-            st.session_state.chip_sets[new_name] = {"win_amount": new_win, "lose_amount": new_lose}
-            st.session_state.current_chip_set = new_name
-            st.success(f"已新增：{new_name}")
-            st.experimental_rerun()
-        else:
-            st.warning("名稱不可空白或重複")
-
-st.caption("© 2025 AI 百家樂全自動預測分析系統 | 手機友善優化版")
+st.caption("© 2025 AI 百家樂預測系統 | 黑色極簡進階策略版")
