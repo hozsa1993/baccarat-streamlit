@@ -6,7 +6,7 @@ import math
 st.set_page_config(page_title="AI 百家樂預測分析", page_icon="🎰", layout="centered")
 
 # --- 激活碼驗證 ---
-PASSWORD = "baccarat2025"
+PASSWORD = "aa17888"
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
 
