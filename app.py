@@ -1,5 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
+import math
 
 # 頁面設定
 st.set_page_config(page_title="AI 百家樂預測分析", page_icon="🎰", layout="centered")
@@ -38,7 +39,6 @@ def init_state():
             st.session_state[k] = v
 init_state()
 
-# 統計更新函式
 def add_history(result):
     st.session_state.history.append(result)
     st.session_state.total_games += 1
@@ -57,7 +57,6 @@ def update_result(win: bool):
     else:
         st.session_state.total_profit -= chip["lose_amount"]
 
-# 重置資料
 def reset_all():
     st.session_state.history = []
     st.session_state.total_profit = 0
@@ -67,10 +66,96 @@ def reset_all():
     st.session_state.count_P = 0
     st.session_state.count_T = 0
 
-# UI - 輸入本局結果
+def longest_streak(seq, char):
+    max_streak = streak = 0
+    for c in seq:
+        if c == char:
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 0
+    return max_streak
+
+def weighted_prob(history, target, window=10):
+    if len(history) == 0:
+        return 0
+    recent = history[-window:]
+    weights = list(range(1, len(recent) + 1))  # 權重從1開始往上加
+    total_weight = sum(weights)
+    weighted_count = sum(w for h, w in zip(recent, weights) if h == target)
+    return weighted_count / total_weight
+
+def streak_score(streak, max_streak=7):
+    if streak == 0:
+        return 0
+    return (math.exp(streak) - 1) / (math.exp(max_streak) - 1)
+
+def reversal_score(history, target, window=6):
+    if len(history) < window:
+        return 0
+    recent = history[-window:]
+    count_target = recent.count(target)
+    if count_target >= window - 1:
+        return 1
+    return 0
+
+def suggest_bet_advanced():
+    h = st.session_state.history
+    if len(h) < 5:
+        return "資料不足，暫無建議"
+
+    b_prob = weighted_prob(h, "B")
+    p_prob = weighted_prob(h, "P")
+    t_prob = weighted_prob(h, "T")
+
+    b_streak = streak_score(longest_streak(h, "B"))
+    p_streak = streak_score(longest_streak(h, "P"))
+    t_streak = streak_score(longest_streak(h, "T"))
+
+    b_rev = reversal_score(h, "B")
+    p_rev = reversal_score(h, "P")
+    t_rev = reversal_score(h, "T")
+
+    w_prob, w_streak, w_rev = 0.5, 0.3, 0.2
+
+    scores = {
+        "B": b_prob * w_prob + b_streak * w_streak + b_rev * w_rev,
+        "P": p_prob * w_prob + p_streak * w_streak + p_rev * w_rev,
+        "T": t_prob * w_prob + t_streak * w_streak + t_rev * w_rev,
+    }
+
+    top = max(scores, key=scores.get)
+    if scores[top] < 0.3:
+        return "趨勢不明，建議觀望"
+
+    mapping = {"B": "莊 (B)", "P": "閒 (P)", "T": "和 (T)"}
+    return f"建議下注：{mapping[top]} (信心 {scores[top]:.2f})"
+
+def display_stats():
+    banker = st.session_state.count_B
+    player = st.session_state.count_P
+    tie = st.session_state.count_T
+    total = st.session_state.total_games
+    win_games = st.session_state.win_games
+    total_profit = st.session_state.total_profit
+    win_rate = (win_games / total * 100) if total else 0
+
+    st.subheader("📊 統計資料")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("莊 (B)", banker)
+    col2.metric("閒 (P)", player)
+    col3.metric("和 (T)", tie)
+    col4.metric("總局數", total)
+
+    if total > 0:
+        st.info(f"勝率｜莊: {banker/total*100:.1f}% | 閒: {player/total*100:.1f}% | 和: {tie/total*100:.1f}%")
+
+    st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
+
 st.markdown("<h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂全自動預測</h1>", unsafe_allow_html=True)
 st.divider()
 
+# 輸入本局結果
 st.subheader("🎮 輸入本局結果")
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -104,67 +189,9 @@ if st.button("🧹 清除資料", use_container_width=True):
     st.experimental_rerun()
 st.divider()
 
-# 下注建議（放統計資料前）
-def longest_streak(seq, char):
-    max_streak = streak = 0
-    for c in seq:
-        if c == char:
-            streak += 1
-            max_streak = max(max_streak, streak)
-        else:
-            streak = 0
-    return max_streak
-
-def suggest_bet_combined():
-    h = st.session_state.history
-    if len(h) < 5:
-        return "資料不足，暫無建議"
-
-    total = len(h)
-    b = st.session_state.count_B / total
-    p = st.session_state.count_P / total
-    t = st.session_state.count_T / total
-
-    bs = min(longest_streak(h, "B"), 5)/5
-    ps = min(longest_streak(h, "P"), 5)/5
-    ts = min(longest_streak(h, "T"), 5)/5
-
-    rev = {"B":0,"P":0,"T":0}
-    if total >= 4:
-        last4 = h[-4:]
-        if all(x=="B" for x in last4): rev["P"]=1
-        if all(x=="P" for x in last4): rev["B"]=1
-
-    score = {k: v*0.4 + s*0.4 + rev[k]*0.2 for k,v,s in zip(["B","P","T"], [b,p,t], [bs,ps,ts])}
-    top = max(score, key=score.get)
-    if score[top]<0.3:
-        return "趨勢不明，建議觀望"
-    mapping = {"B":"莊 (B)","P":"閒 (P)","T":"和 (T)"}
-    return f"建議下注：{mapping[top]} (信心 {score[top]:.2f})"
-
-st.info(f"🎯 {suggest_bet_combined()}")
-
-# 統計資料顯示
-def display_stats():
-    banker = st.session_state.count_B
-    player = st.session_state.count_P
-    tie = st.session_state.count_T
-    total = st.session_state.total_games
-    win_games = st.session_state.win_games
-    total_profit = st.session_state.total_profit
-    win_rate = (win_games / total * 100) if total else 0
-
-    st.subheader("📊 統計資料")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("莊 (B)", banker)
-    col2.metric("閒 (P)", player)
-    col3.metric("和 (T)", tie)
-    col4.metric("總局數", total)
-
-    if total > 0:
-        st.info(f"勝率｜莊: {banker/total*100:.1f}% | 閒: {player/total*100:.1f}% | 和: {tie/total*100:.1f}%")
-
-    st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
+# 建議下注（放勝負確認後、統計資料前）
+st.subheader("🎯 下注建議")
+st.info(suggest_bet_advanced())
 
 display_stats()
 st.divider()
@@ -201,9 +228,7 @@ st.write(f"💸 失敗金額: {st.session_state.chip_sets[selected_chip]['lose_a
 with st.expander("➕ 新增籌碼組"):
     new_name = st.text_input("名稱", max_chars=20)
 
-    # 建立選項列表，100到1000000，步進100
     amount_options = list(range(100, 1_000_001, 100))
-
     default_win_index = amount_options.index(100)
     default_lose_index = amount_options.index(100)
 
