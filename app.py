@@ -43,7 +43,7 @@ if not st.session_state.access_granted:
     st.stop()
 
 # ===== 初始化狀態 =====
-if "history" not in st.session_state:
+if "history" not in st.session_state or not isinstance(st.session_state.history, list):
     st.session_state.history = []
 if "total_games" not in st.session_state:
     st.session_state.total_games = 0
@@ -209,7 +209,11 @@ if st.session_state.history:
 
 # ===== 顯示完整歷史 =====
 with st.expander("📜 查看完整輸入歷史"):
-    st.write(st.session_state.history)
+    try:
+        st.text(st.session_state.history)
+    except Exception as e:
+        st.error(f"顯示歷史錯誤: {e}")
+        st.write(str(st.session_state.history))
 
 # ===== 重置按鈕 =====
 if st.button("🧹 重置資料"):
