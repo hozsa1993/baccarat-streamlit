@@ -30,7 +30,7 @@ def init_state():
         'count_B': 0,
         'count_P': 0,
         'count_T': 0,
-        'chip_sets': {'預設籌碼': {'win_amount': 10000, 'lose_amount': 10000}},
+        'chip_sets': {'預設籌碼': {'win_amount': 100, 'lose_amount': 100}},
         'current_chip_set': '預設籌碼',
     }
     for k, v in defaults.items():
@@ -104,6 +104,46 @@ if st.button("🧹 清除資料", use_container_width=True):
     st.experimental_rerun()
 st.divider()
 
+# 下注建議（放統計資料前）
+def longest_streak(seq, char):
+    max_streak = streak = 0
+    for c in seq:
+        if c == char:
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 0
+    return max_streak
+
+def suggest_bet_combined():
+    h = st.session_state.history
+    if len(h) < 5:
+        return "資料不足，暫無建議"
+
+    total = len(h)
+    b = st.session_state.count_B / total
+    p = st.session_state.count_P / total
+    t = st.session_state.count_T / total
+
+    bs = min(longest_streak(h, "B"), 5)/5
+    ps = min(longest_streak(h, "P"), 5)/5
+    ts = min(longest_streak(h, "T"), 5)/5
+
+    rev = {"B":0,"P":0,"T":0}
+    if total >= 4:
+        last4 = h[-4:]
+        if all(x=="B" for x in last4): rev["P"]=1
+        if all(x=="P" for x in last4): rev["B"]=1
+
+    score = {k: v*0.4 + s*0.4 + rev[k]*0.2 for k,v,s in zip(["B","P","T"], [b,p,t], [bs,ps,ts])}
+    top = max(score, key=score.get)
+    if score[top]<0.3:
+        return "趨勢不明，建議觀望"
+    mapping = {"B":"莊 (B)","P":"閒 (P)","T":"和 (T)"}
+    return f"建議下注：{mapping[top]} (信心 {score[top]:.2f})"
+
+st.info(f"🎯 {suggest_bet_combined()}")
+
 # 統計資料顯示
 def display_stats():
     banker = st.session_state.count_B
@@ -160,8 +200,16 @@ st.write(f"💸 失敗金額: {st.session_state.chip_sets[selected_chip]['lose_a
 
 with st.expander("➕ 新增籌碼組"):
     new_name = st.text_input("名稱", max_chars=20)
-    new_win = st.number_input("勝利金額", min_value=1, max_value=1_000_000, value=10000, step=1000)
-    new_lose = st.number_input("失敗金額", min_value=1, max_value=1_000_000, value=10000, step=1000)
+
+    # 建立選項列表，100到1000000，步進100
+    amount_options = list(range(100, 1_000_001, 100))
+
+    default_win_index = amount_options.index(100)
+    default_lose_index = amount_options.index(100)
+
+    new_win = st.selectbox("勝利金額", amount_options, index=default_win_index)
+    new_lose = st.selectbox("失敗金額", amount_options, index=default_lose_index)
+
     if st.button("新增"):
         if new_name.strip() and new_name not in st.session_state.chip_sets:
             st.session_state.chip_sets[new_name] = {"win_amount": new_win, "lose_amount": new_lose}
@@ -170,45 +218,5 @@ with st.expander("➕ 新增籌碼組"):
             st.experimental_rerun()
         else:
             st.warning("名稱不可空白或重複")
-
-# 下注建議（維持原有演算法）
-def longest_streak(seq, char):
-    max_streak = streak = 0
-    for c in seq:
-        if c == char:
-            streak += 1
-            max_streak = max(max_streak, streak)
-        else:
-            streak = 0
-    return max_streak
-
-def suggest_bet_combined():
-    h = st.session_state.history
-    if len(h) < 5:
-        return "資料不足，暫無建議"
-
-    total = len(h)
-    b = st.session_state.count_B / total
-    p = st.session_state.count_P / total
-    t = st.session_state.count_T / total
-
-    bs = min(longest_streak(h, "B"), 5)/5
-    ps = min(longest_streak(h, "P"), 5)/5
-    ts = min(longest_streak(h, "T"), 5)/5
-
-    rev = {"B":0,"P":0,"T":0}
-    if total >= 4:
-        last4 = h[-4:]
-        if all(x=="B" for x in last4): rev["P"]=1
-        if all(x=="P" for x in last4): rev["B"]=1
-
-    score = {k: v*0.4 + s*0.4 + rev[k]*0.2 for k,v,s in zip(["B","P","T"], [b,p,t], [bs,ps,ts])}
-    top = max(score, key=score.get)
-    if score[top]<0.3:
-        return "趨勢不明，建議觀望"
-    mapping = {"B":"莊 (B)","P":"閒 (P)","T":"和 (T)"}
-    return f"建議下注：{mapping[top]} (信心 {score[top]:.2f})"
-
-st.info(f"🎯 {suggest_bet_combined()}")
 
 st.caption("© 2025 AI 百家樂全自動預測分析系統 | 手機友善優化版")
