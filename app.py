@@ -1,9 +1,10 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 
 # ===== 頁面設定 =====
-st.set_page_config(page_title="AI 百家樂進階預測系統", page_icon="🎰", layout="centered")
+st.set_page_config(page_title="AI 百家樂純機器學習預測系統", page_icon="🎰", layout="centered")
 
 # ===== 黑色主題 CSS =====
 st.markdown("""
@@ -70,51 +71,43 @@ if strategy == "無策略":
 else:
     st.markdown(f"本局下注金額將由【{strategy}】策略自動計算")
 
-# ===== 進階預測函數 =====
-def advanced_predict(history, recent_window=6):
-    if not history:
-        return "無法預測"
+# ===== 編碼歷史資料 =====
+def encode_result(res):
+    mapping = {'P':0, 'B':1, 'T':2}
+    return [mapping.get(r, -1) for r in res]
 
-    total = len(history)
-    count_p = history.count("P")
-    count_b = history.count("B")
-    count_t = history.count("T")
+# ===== 建立特徵與標籤 =====
+def create_dataset(history, window=3):
+    data = encode_result(history)
+    X, y = [], []
+    for i in range(len(data) - window):
+        X.append(data[i:i+window])
+        y.append(data[i+window])
+    return np.array(X), np.array(y)
 
-    # 全局機率
-    prob_p = count_p / total
-    prob_b = count_b / total
-    prob_t = count_t / total
+# ===== ML 預測 =====
+def ml_predict(history, window=3):
+    if len(history) < window + 1:
+        return "資料不足無法預測"
+    X, y = create_dataset(history, window)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    last_seq = np.array(encode_result(history[-window:])).reshape(1, -1)
+    pred = model.predict(last_seq)[0]
+    mapping = {0:'閒 (P)', 1:'莊 (B)', 2:'和 (T)'}
+    return mapping.get(pred, "未知")
 
-    # 最近幾局趨勢分析
-    recent = history[-recent_window:]
-    recent_p = recent.count("P")
-    recent_b = recent.count("B")
-    recent_t = recent.count("T")
+ml_prediction = ml_predict(st.session_state.history)
 
-    # 趨勢得分（短期偏向）
-    trend_score_p = recent_p / recent_window
-    trend_score_b = recent_b / recent_window
-    trend_score_t = recent_t / recent_window
-
-    # 綜合得分 = 全局機率 * 0.6 + 短期趨勢 * 0.4 (可調)
-    score_p = prob_p * 0.6 + trend_score_p * 0.4
-    score_b = prob_b * 0.6 + trend_score_b * 0.4
-    score_t = prob_t * 0.6 + trend_score_t * 0.4
-
-    scores = {"閒 (P)": score_p, "莊 (B)": score_b, "和 (T)": score_t}
-    prediction = max(scores, key=scores.get)
-    confidence = scores[prediction] * 100
-
-    return f"{prediction} ({confidence:.1f}%)"
-
-prediction = advanced_predict(st.session_state.history)
-
-# ===== 計算下注金額 =====
+# ===== 策略下注金額計算 =====
 def calc_bet_amount(strategy):
-    base_bet = 100
+    base_bet = st.session_state.bet_amount
     if strategy == "1326策略":
         seq = [1,3,2,6]
         step = st.session_state.count_1326
+        if step >= len(seq):
+            step = 0
+            st.session_state.count_1326 = 0
         amount = seq[step] * base_bet
         return amount
     elif strategy == "馬丁策略":
@@ -135,7 +128,7 @@ cols[1].metric("局數", f"#{st.session_state.total_games}")
 acc = (st.session_state.win_games / st.session_state.total_games * 100) if st.session_state.total_games else 0
 cols[2].metric("模型準確率", f"{acc:.1f}%")
 cols[3].metric("當前本金", f"${st.session_state.balance}")
-cols[4].metric("預測下一局", prediction)
+cols[4].metric("機器學習預測下一局", ml_prediction)
 
 st.markdown(f"### 本局下注金額: ${current_bet}")
 
@@ -158,41 +151,31 @@ with col3:
 def update_after_result(result):
     st.session_state.history.append(result)
     st.session_state.total_games += 1
-
-    # 先扣除下注金額
     st.session_state.balance -= current_bet
-
     win = False
-
-    # 和局退還本金
     if result == "T":
         st.session_state.balance += current_bet
     else:
-        # 判斷勝負：根據預測結果決定下注方
-        # 預測格式：閒 (P) (xx.x%)
-        predicted_side = prediction.split(" ")[0]  # 取出「閒」「莊」「和」
-        # 對應下注方判定
+        predicted_side = ml_prediction.split(" ")[0]
         if predicted_side == "閒" and result == "P":
             win = True
         elif predicted_side == "莊" and result == "B":
             win = True
         else:
             win = False
-
         if win:
             st.session_state.win_games += 1
             if result == "P":
-                st.session_state.balance += current_bet * 2  # 閒贏1倍
+                st.session_state.balance += current_bet * 2
             elif result == "B":
-                st.session_state.balance += int(current_bet * 1.95)  # 莊贏需扣5%抽水
-
+                st.session_state.balance += int(current_bet * 1.95)
     # 策略下注更新
     if strategy == "1326策略":
         if win:
             st.session_state.count_1326 = 0
         else:
             st.session_state.count_1326 += 1
-            if st.session_state.count_1326 > 3:
+            if st.session_state.count_1326 >= 4:
                 st.session_state.count_1326 = 0
     elif strategy == "馬丁策略":
         if win:
@@ -239,4 +222,4 @@ if st.button("🧹 重置資料"):
     st.session_state.bet_amount = 100
     st.success("資料已重置")
 
-st.caption("© 2025 AI 百家樂進階預測系統 | 黑色極簡策略版")
+st.caption("© 2025 AI 百家樂純機器學習預測系統 | 黑色極簡策略版")
