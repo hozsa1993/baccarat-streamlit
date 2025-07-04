@@ -1,5 +1,5 @@
-/your_project/
-   app.py
-   activation_manager.py
-   baccarat_crawler.py
-   activation_codes.db (自動產生)
+streamlit
+matplotlib
+pandas
+selenium
+webdriver_manager
