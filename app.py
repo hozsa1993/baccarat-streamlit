@@ -1,12 +1,11 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import math
+import sqlite3
 
-# 頁面設定
-st.set_page_config(page_title="AI 百家樂預測分析", page_icon="🎰", layout="centered")
-
-# --- 激活碼驗證 ---
+# --- 激活碼設定 ---
 PASSWORD = "aa17888"
+
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
 
@@ -21,7 +20,21 @@ if not st.session_state.access_granted:
             st.error("激活碼錯誤，請重新輸入")
     st.stop()
 
-# --- 初始化 ---
+# --- 從 SQLite 讀取歷史牌局 ---
+def load_history_from_db(db_path="baccarat_history.db"):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT result FROM baccarat_results ORDER BY id ASC")
+        rows = cursor.fetchall()
+        conn.close()
+        history = [r[0] for r in rows if r[0] in ("B", "P", "T")]
+        return history
+    except Exception as e:
+        st.warning(f"讀取資料庫失敗：{e}")
+        return []
+
+# --- 初始化狀態 ---
 def init_state():
     defaults = {
         'history': [],
@@ -37,9 +50,15 @@ def init_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
 init_state()
 
-# --- 計算與建議下注 ---
+# 同步爬蟲資料庫歷史牌局
+db_history = load_history_from_db()
+if db_history and db_history != st.session_state.history:
+    st.session_state.history = db_history
+
+# --- 預測函數 (略) ---
 def longest_streak(seq, char):
     max_streak = streak = 0
     for c in seq:
@@ -105,11 +124,12 @@ def suggest_bet_advanced():
     mapping = {"B": "莊 (B)", "P": "閒 (P)", "T": "和 (T)"}
     return f"建議下注：{mapping[top]} (信心 {scores[top]:.2f})"
 
-# --- UI 開始 ---
+# --- UI ---
+
 st.markdown("<h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂全自動預測</h1>", unsafe_allow_html=True)
 st.divider()
 
-# 建議下注 (拉到最上方)
+# 建議下注
 st.subheader("🎯 下注建議")
 st.info(suggest_bet_advanced())
 st.divider()
@@ -122,19 +142,16 @@ with col1:
         st.session_state.history.append("B")
         st.session_state.total_games += 1
         st.session_state.count_B += 1
-        st.experimental_rerun()
 with col2:
     if st.button("🟦 閒 (P)", use_container_width=True):
         st.session_state.history.append("P")
         st.session_state.total_games += 1
         st.session_state.count_P += 1
-        st.experimental_rerun()
 with col3:
     if st.button("🟩 和 (T)", use_container_width=True):
         st.session_state.history.append("T")
         st.session_state.total_games += 1
         st.session_state.count_T += 1
-        st.experimental_rerun()
 st.divider()
 
 # 勝負確認
@@ -148,11 +165,9 @@ with col1:
     if st.button(f"✅ 勝利 (+{win_amount:,})", use_container_width=True):
         st.session_state.total_profit += win_amount
         st.session_state.win_games += 1
-        st.experimental_rerun()
 with col2:
     if st.button(f"❌ 失敗 (-{lose_amount:,})", use_container_width=True):
         st.session_state.total_profit -= lose_amount
-        st.experimental_rerun()
 
 if st.button("🧹 清除資料", use_container_width=True):
     st.session_state.history = []
@@ -217,8 +232,11 @@ st.write(f"💸 失敗金額: {st.session_state.chip_sets[selected_chip]['lose_a
 with st.expander("➕ 新增籌碼組"):
     new_name = st.text_input("名稱", max_chars=20)
 
-    new_win = st.number_input("勝利金額", min_value=100, max_value=1_000_000, value=100, step=100)
-    new_lose = st.number_input("失敗金額", min_value=100, max_value=1_000_000, value=100, step=100)
+    amount_options = list(range(100, 1_000_001, 100))
+    default_index = amount_options.index(100)
+
+    new_win = st.selectbox("勝利金額", amount_options, index=default_index)
+    new_lose = st.selectbox("失敗金額", amount_options, index=default_index)
 
     if st.button("新增"):
         if new_name.strip() and new_name not in st.session_state.chip_sets:
