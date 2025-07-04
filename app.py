@@ -1,230 +1,250 @@
-# === activation_manager.py ===
-import sqlite3
-from datetime import datetime
-import socket
-import uuid
-
-DB_PATH = "activation_codes.db"
-
-def setup_activation_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS activation_codes (
-            code TEXT PRIMARY KEY,
-            is_active INTEGER DEFAULT 1,
-            expiry_date TEXT,
-            usage_limit INTEGER DEFAULT 100,
-            usage_count INTEGER DEFAULT 0,
-            bind_ip TEXT,
-            bind_hostname TEXT,
-            bind_mac TEXT,
-            bind_limit INTEGER DEFAULT 1,
-            bind_count INTEGER DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def get_current_machine_info():
-    ip = socket.gethostbyname(socket.gethostname())
-    hostname = socket.gethostname()
-    mac = ':'.join(['{:02x}'.format((uuid.getnode() >> ele) & 0xff) 
-                    for ele in range(0,8*6,8)][::-1])
-    return ip, hostname, mac
-
-def validate_code(code):
-    ip, hostname, mac = get_current_machine_info()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT is_active, expiry_date, usage_limit, usage_count,
-               bind_ip, bind_hostname, bind_mac, bind_limit, bind_count
-        FROM activation_codes WHERE code = ?
-    """, (code,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return False, "❌ 激活碼不存在"
-    (is_active, expiry_date, usage_limit, usage_count,
-     bind_ip, bind_hostname, bind_mac, bind_limit, bind_count) = row
-
-    if not is_active:
-        conn.close()
-        return False, "❌ 激活碼已停用"
-    if expiry_date and datetime.now().date() > datetime.strptime(expiry_date, "%Y-%m-%d").date():
-        conn.close()
-        return False, "❌ 激活碼已過期"
-    if usage_count >= usage_limit:
-        conn.close()
-        return False, "❌ 已達使用次數上限"
-
-    # 綁定檢查
-    if bind_ip and bind_ip != ip:
-        # 不同IP，檢查是否還可綁定
-        if bind_count >= bind_limit:
-            conn.close()
-            return False, "❌ 已達硬體綁定上限"
-        else:
-            # 綁定新IP等資訊，並+1綁定計數
-            cursor.execute("""
-                UPDATE activation_codes SET bind_ip=?, bind_hostname=?, bind_mac=?, bind_count=bind_count+1
-                WHERE code=?
-            """, (ip, hostname, mac, code))
-            conn.commit()
-    else:
-        # 首次綁定
-        if not bind_ip:
-            cursor.execute("""
-                UPDATE activation_codes SET bind_ip=?, bind_hostname=?, bind_mac=?, bind_count=1
-                WHERE code=?
-            """, (ip, hostname, mac, code))
-            conn.commit()
-
-    cursor.execute("UPDATE activation_codes SET usage_count = usage_count + 1 WHERE code = ?", (code,))
-    conn.commit()
-    conn.close()
-    return True, "✅ 激活成功！歡迎使用"
-
-def add_activation_code(code, expiry_date, usage_limit, bind_limit=1):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT OR REPLACE INTO activation_codes 
-        (code, expiry_date, usage_limit, bind_limit) VALUES (?, ?, ?, ?)
-    """, (code, expiry_date, usage_limit, bind_limit))
-    conn.commit()
-    conn.close()
-
-def list_activation_codes():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT code, is_active, expiry_date, usage_limit, usage_count, bind_ip, bind_hostname, bind_mac, bind_limit, bind_count FROM activation_codes")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
-def set_activation_code_active(code, active:bool):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE activation_codes SET is_active = ? WHERE code = ?", (1 if active else 0, code))
-    conn.commit()
-    conn.close()
-
-def delete_activation_code(code):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM activation_codes WHERE code = ?", (code,))
-    conn.commit()
-    conn.close()
-
-
-# === app.py ===
 import streamlit as st
-import subprocess
-import os
-from activation_manager import (
-    setup_activation_db, validate_code, add_activation_code,
-    list_activation_codes, set_activation_code_active, delete_activation_code
-)
+import matplotlib.pyplot as plt
+import math
+import sqlite3
 
-# 初始化DB與測試碼
-setup_activation_db()
-add_activation_code("VIP2025", "2025-12-31", 500, bind_limit=2)
+# --- 激活碼設定 ---
+PASSWORD = "aa17888"
 
-# === 管理員密碼，請自行設定強密碼 ===
-ADMIN_PASSWORD = "admin2025"
-
-def show_admin_panel():
-    st.header("⚙️ 激活碼管理後台")
-    codes = list_activation_codes()
-    st.write("### 所有激活碼")
-    for c in codes:
-        code, is_active, expiry_date, usage_limit, usage_count, bind_ip, bind_hostname, bind_mac, bind_limit, bind_count = c
-        col1, col2, col3, col4, col5 = st.columns([2,1,2,2,1])
-        with col1:
-            st.text(code)
-        with col2:
-            st.text("啟用" if is_active else "停用")
-        with col3:
-            st.text(f"到期: {expiry_date}\n限用: {usage_limit}\n已用: {usage_count}")
-        with col4:
-            st.text(f"綁定IP: {bind_ip}\n主機: {bind_hostname}\nMAC: {bind_mac}\n綁定限制: {bind_limit}\n綁定計數: {bind_count}")
-        with col5:
-            if st.button(f"切換狀態 {code}"):
-                set_activation_code_active(code, not is_active)
-                st.experimental_rerun()
-            if st.button(f"刪除 {code}"):
-                delete_activation_code(code)
-                st.experimental_rerun()
-
-    st.markdown("---")
-    st.write("### 新增激活碼")
-    new_code = st.text_input("激活碼名稱(唯一)", max_chars=20, key="new_code")
-    new_expiry = st.date_input("過期日期", key="new_expiry")
-    new_usage = st.number_input("使用次數上限", min_value=1, max_value=10000, value=100)
-    new_bind_limit = st.number_input("硬體綁定限制（幾台裝置）", min_value=1, max_value=10, value=1)
-
-    if st.button("新增激活碼"):
-        if new_code.strip():
-            add_activation_code(new_code.strip(), new_expiry.strftime("%Y-%m-%d"), new_usage, new_bind_limit)
-            st.success(f"新增激活碼：{new_code.strip()}")
-            st.experimental_rerun()
-        else:
-            st.error("激活碼名稱不可空白")
-
-# === 使用者授權驗證 ===
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
 
-if "admin_logged_in" not in st.session_state:
-    st.session_state.admin_logged_in = False
-
-menu = ["使用者登入", "管理後台"]
-choice = st.sidebar.selectbox("選單", menu)
-
-if choice == "管理後台":
-    st.title("🔑 管理員登入")
-    admin_pwd = st.text_input("管理員密碼", type="password")
-    if st.button("登入"):
-        if admin_pwd == ADMIN_PASSWORD:
-            st.session_state.admin_logged_in = True
-            st.experimental_rerun()
-        else:
-            st.error("管理員密碼錯誤")
-    if not st.session_state.admin_logged_in:
-        st.stop()
-    show_admin_panel()
-    st.stop()
-
-# 使用者登入流程
 if not st.session_state.access_granted:
-    st.title("🔒 專屬激活碼驗證")
-    code_input = st.text_input("請輸入您的激活碼", type="password")
-    if st.button("啟用"):
-        valid, message = validate_code(code_input.strip())
-        if valid:
+    st.markdown("<h1 style='text-align:center; color:#FF6F61;'>請輸入激活碼以使用系統</h1>", unsafe_allow_html=True)
+    password_input = st.text_input("激活碼 (密碼)", type="password")
+    if st.button("確認"):
+        if password_input == PASSWORD:
             st.session_state.access_granted = True
-            st.success(message)
             st.experimental_rerun()
         else:
-            st.error(message)
+            st.error("激活碼錯誤，請重新輸入")
     st.stop()
 
-# 自動爬蟲執行 (首次啟動)
-if "crawler_done" not in st.session_state:
-    st.info("正在更新最新牌局...")
+# --- 從 SQLite 讀取歷史牌局 ---
+def load_history_from_db(db_path="baccarat_history.db"):
     try:
-        result = subprocess.run(['python', 'baccarat_crawler.py'], capture_output=True, text=True, timeout=60)
-        if result.returncode == 0:
-            st.success("✅ 爬蟲執行完成")
-        else:
-            st.error(f"❌ 爬蟲執行錯誤：{result.stderr}")
-    except subprocess.TimeoutExpired:
-        st.error("❌ 爬蟲執行超時")
-    st.session_state.crawler_done = True
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT result FROM baccarat_results ORDER BY id ASC")
+        rows = cursor.fetchall()
+        conn.close()
+        history = [r[0] for r in rows if r[0] in ("B", "P", "T")]
+        return history
+    except Exception as e:
+        st.warning(f"讀取資料庫失敗：{e}")
+        return []
 
-# 主程式區域，請貼入你的完整預測核心、走勢圖、下注建議等功能
-st.title("🎲 AI 百家樂全自動預測系統")
-st.write("✅ 已完成授權與資料更新，請開始使用。")
-st.info("🔹 請將完整預測視覺化及統計邏輯貼入此區，即完成商用部署")
+# --- 初始化狀態 ---
+def init_state():
+    defaults = {
+        'history': [],
+        'total_profit': 0,
+        'total_games': 0,
+        'win_games': 0,
+        'count_B': 0,
+        'count_P': 0,
+        'count_T': 0,
+        'chip_sets': {'預設籌碼': {'win_amount': 100, 'lose_amount': 100}},
+        'current_chip_set': '預設籌碼',
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+init_state()
+
+# 同步爬蟲資料庫歷史牌局
+db_history = load_history_from_db()
+if db_history and db_history != st.session_state.history:
+    st.session_state.history = db_history
+
+# --- 預測函數 (略) ---
+def longest_streak(seq, char):
+    max_streak = streak = 0
+    for c in seq:
+        if c == char:
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 0
+    return max_streak
+
+def weighted_prob(history, target, window=10):
+    if len(history) == 0:
+        return 0
+    recent = history[-window:]
+    weights = list(range(1, len(recent) + 1))
+    total_weight = sum(weights)
+    weighted_count = sum(w for h, w in zip(recent, weights) if h == target)
+    return weighted_count / total_weight
+
+def streak_score(streak, max_streak=7):
+    if streak == 0:
+        return 0
+    return (math.exp(streak) - 1) / (math.exp(max_streak) - 1)
+
+def reversal_score(history, target, window=6):
+    if len(history) < window:
+        return 0
+    recent = history[-window:]
+    count_target = recent.count(target)
+    if count_target >= window - 1:
+        return 1
+    return 0
+
+def suggest_bet_advanced():
+    h = st.session_state.history
+    if len(h) < 5:
+        return "資料不足，暫無建議"
+
+    b_prob = weighted_prob(h, "B")
+    p_prob = weighted_prob(h, "P")
+    t_prob = weighted_prob(h, "T")
+
+    b_streak = streak_score(longest_streak(h, "B"))
+    p_streak = streak_score(longest_streak(h, "P"))
+    t_streak = streak_score(longest_streak(h, "T"))
+
+    b_rev = reversal_score(h, "B")
+    p_rev = reversal_score(h, "P")
+    t_rev = reversal_score(h, "T")
+
+    w_prob, w_streak, w_rev = 0.5, 0.3, 0.2
+
+    scores = {
+        "B": b_prob * w_prob + b_streak * w_streak + b_rev * w_rev,
+        "P": p_prob * w_prob + p_streak * w_streak + p_rev * w_rev,
+        "T": t_prob * w_prob + t_streak * w_streak + t_rev * w_rev,
+    }
+
+    top = max(scores, key=scores.get)
+    if scores[top] < 0.3:
+        return "趨勢不明，建議觀望"
+
+    mapping = {"B": "莊 (B)", "P": "閒 (P)", "T": "和 (T)"}
+    return f"建議下注：{mapping[top]} (信心 {scores[top]:.2f})"
+
+# --- UI ---
+
+st.markdown("<h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂全自動預測</h1>", unsafe_allow_html=True)
+st.divider()
+
+# 建議下注
+st.subheader("🎯 下注建議")
+st.info(suggest_bet_advanced())
+st.divider()
+
+# 輸入本局結果
+st.subheader("🎮 輸入本局結果")
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("🟥 莊 (B)", use_container_width=True):
+        st.session_state.history.append("B")
+        st.session_state.total_games += 1
+        st.session_state.count_B += 1
+with col2:
+    if st.button("🟦 閒 (P)", use_container_width=True):
+        st.session_state.history.append("P")
+        st.session_state.total_games += 1
+        st.session_state.count_P += 1
+with col3:
+    if st.button("🟩 和 (T)", use_container_width=True):
+        st.session_state.history.append("T")
+        st.session_state.total_games += 1
+        st.session_state.count_T += 1
+st.divider()
+
+# 勝負確認
+current_chip = st.session_state.chip_sets[st.session_state.current_chip_set]
+win_amount = current_chip["win_amount"]
+lose_amount = current_chip["lose_amount"]
+
+st.subheader("💰 勝負確認")
+col1, col2 = st.columns(2)
+with col1:
+    if st.button(f"✅ 勝利 (+{win_amount:,})", use_container_width=True):
+        st.session_state.total_profit += win_amount
+        st.session_state.win_games += 1
+with col2:
+    if st.button(f"❌ 失敗 (-{lose_amount:,})", use_container_width=True):
+        st.session_state.total_profit -= lose_amount
+
+if st.button("🧹 清除資料", use_container_width=True):
+    st.session_state.history = []
+    st.session_state.total_profit = 0
+    st.session_state.total_games = 0
+    st.session_state.win_games = 0
+    st.session_state.count_B = 0
+    st.session_state.count_P = 0
+    st.session_state.count_T = 0
+    st.success("已清除所有資料")
+    st.experimental_rerun()
+st.divider()
+
+# 統計資料
+st.subheader("📊 統計資料")
+total = st.session_state.total_games
+win_games = st.session_state.win_games
+total_profit = st.session_state.total_profit
+win_rate = (win_games / total * 100) if total else 0
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("莊 (B)", st.session_state.count_B)
+col2.metric("閒 (P)", st.session_state.count_P)
+col3.metric("和 (T)", st.session_state.count_T)
+col4.metric("總局數", total)
+
+if total > 0:
+    st.info(f"勝率｜莊: {st.session_state.count_B/total*100:.1f}% | 閒: {st.session_state.count_P/total*100:.1f}% | 和: {st.session_state.count_T/total*100:.1f}%")
+
+st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
+st.divider()
+
+# 走勢圖
+def plot_trend():
+    h = st.session_state.history
+    if not h:
+        st.info("尚無資料")
+        return
+    mapping = {"B": 1, "P": 0, "T": 0.5}
+    data = [mapping[x] for x in h[-30:]]
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.plot(range(1, len(data)+1), data, marker='o', color="#FF6F61", linewidth=2)
+    ax.set_title("近30局走勢")
+    ax.set_xlabel("局數")
+    ax.set_yticks([0, 0.5, 1])
+    ax.set_yticklabels(["閒", "和", "莊"])
+    ax.grid(True, linestyle="--", alpha=0.5)
+    st.pyplot(fig)
+
+plot_trend()
+st.divider()
+
+# 籌碼設定
+st.subheader("🎲 籌碼設定 (簡易切換)")
+chip_names = list(st.session_state.chip_sets.keys())
+selected_chip = st.selectbox("選擇籌碼組", chip_names, index=chip_names.index(st.session_state.current_chip_set))
+st.session_state.current_chip_set = selected_chip
+
+st.write(f"💰 勝利金額: {st.session_state.chip_sets[selected_chip]['win_amount']:,} 元")
+st.write(f"💸 失敗金額: {st.session_state.chip_sets[selected_chip]['lose_amount']:,} 元")
+
+with st.expander("➕ 新增籌碼組"):
+    new_name = st.text_input("名稱", max_chars=20)
+
+    amount_options = list(range(100, 1_000_001, 100))
+    default_index = amount_options.index(100)
+
+    new_win = st.selectbox("勝利金額", amount_options, index=default_index)
+    new_lose = st.selectbox("失敗金額", amount_options, index=default_index)
+
+    if st.button("新增"):
+        if new_name.strip() and new_name not in st.session_state.chip_sets:
+            st.session_state.chip_sets[new_name] = {"win_amount": new_win, "lose_amount": new_lose}
+            st.session_state.current_chip_set = new_name
+            st.success(f"已新增：{new_name}")
+            st.experimental_rerun()
+        else:
+            st.warning("名稱不可空白或重複")
+
+st.caption("© 2025 AI 百家樂全自動預測分析系統 | 手機友善優化版")
