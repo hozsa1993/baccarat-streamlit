@@ -2,10 +2,10 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import math
 import sqlite3
+import os
 
 # --- 激活碼設定 ---
 PASSWORD = "aa17888"
-
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
 
@@ -20,6 +20,22 @@ if not st.session_state.access_granted:
             st.error("激活碼錯誤，請重新輸入")
     st.stop()
 
+# --- 自動初始化資料庫與資料表 ---
+def init_db(db_path="baccarat_history.db"):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS baccarat_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        result TEXT NOT NULL CHECK (result IN ('B', 'P', 'T')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
 # --- 從 SQLite 讀取歷史牌局 ---
 def load_history_from_db(db_path="baccarat_history.db"):
     try:
@@ -33,6 +49,14 @@ def load_history_from_db(db_path="baccarat_history.db"):
     except Exception as e:
         st.warning(f"讀取資料庫失敗：{e}")
         return []
+
+# --- 新增資料進 SQLite ---
+def insert_result(result, db_path="baccarat_history.db"):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO baccarat_results (result) VALUES (?)", (result,))
+    conn.commit()
+    conn.close()
 
 # --- 初始化狀態 ---
 def init_state():
@@ -53,12 +77,11 @@ def init_state():
 
 init_state()
 
-# 同步爬蟲資料庫歷史牌局
 db_history = load_history_from_db()
 if db_history and db_history != st.session_state.history:
     st.session_state.history = db_history
 
-# --- 預測函數 (略) ---
+# --- 預測計算 ---
 def longest_streak(seq, char):
     max_streak = streak = 0
     for c in seq:
@@ -125,16 +148,14 @@ def suggest_bet_advanced():
     return f"建議下注：{mapping[top]} (信心 {scores[top]:.2f})"
 
 # --- UI ---
-
 st.markdown("<h1 style='text-align:center; color:#FF6F61;'>🎲 AI 百家樂全自動預測</h1>", unsafe_allow_html=True)
 st.divider()
 
-# 建議下注
 st.subheader("🎯 下注建議")
 st.info(suggest_bet_advanced())
 st.divider()
 
-# 輸入本局結果
+# --- 輸入本局結果 ---
 st.subheader("🎮 輸入本局結果")
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -142,19 +163,22 @@ with col1:
         st.session_state.history.append("B")
         st.session_state.total_games += 1
         st.session_state.count_B += 1
+        insert_result("B")
 with col2:
     if st.button("🟦 閒 (P)", use_container_width=True):
         st.session_state.history.append("P")
         st.session_state.total_games += 1
         st.session_state.count_P += 1
+        insert_result("P")
 with col3:
     if st.button("🟩 和 (T)", use_container_width=True):
         st.session_state.history.append("T")
         st.session_state.total_games += 1
         st.session_state.count_T += 1
+        insert_result("T")
 st.divider()
 
-# 勝負確認
+# --- 勝負確認 ---
 current_chip = st.session_state.chip_sets[st.session_state.current_chip_set]
 win_amount = current_chip["win_amount"]
 lose_amount = current_chip["lose_amount"]
@@ -177,11 +201,16 @@ if st.button("🧹 清除資料", use_container_width=True):
     st.session_state.count_B = 0
     st.session_state.count_P = 0
     st.session_state.count_T = 0
+    conn = sqlite3.connect("baccarat_history.db")
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM baccarat_results")
+    conn.commit()
+    conn.close()
     st.success("已清除所有資料")
     st.experimental_rerun()
 st.divider()
 
-# 統計資料
+# --- 統計資料 ---
 st.subheader("📊 統計資料")
 total = st.session_state.total_games
 win_games = st.session_state.win_games
@@ -200,7 +229,7 @@ if total > 0:
 st.success(f"💰 獲利: {total_profit:,} 元 | 勝場: {win_games} | 總場: {total} | 勝率: {win_rate:.1f}%")
 st.divider()
 
-# 走勢圖
+# --- 走勢圖 ---
 def plot_trend():
     h = st.session_state.history
     if not h:
@@ -220,7 +249,7 @@ def plot_trend():
 plot_trend()
 st.divider()
 
-# 籌碼設定
+# --- 籌碼設定 ---
 st.subheader("🎲 籌碼設定 (簡易切換)")
 chip_names = list(st.session_state.chip_sets.keys())
 selected_chip = st.selectbox("選擇籌碼組", chip_names, index=chip_names.index(st.session_state.current_chip_set))
@@ -231,10 +260,8 @@ st.write(f"💸 失敗金額: {st.session_state.chip_sets[selected_chip]['lose_a
 
 with st.expander("➕ 新增籌碼組"):
     new_name = st.text_input("名稱", max_chars=20)
-
     amount_options = list(range(100, 1_000_001, 100))
     default_index = amount_options.index(100)
-
     new_win = st.selectbox("勝利金額", amount_options, index=default_index)
     new_lose = st.selectbox("失敗金額", amount_options, index=default_index)
 
